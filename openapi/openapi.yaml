@@ -1,0 +1,181 @@
+openapi: 3.1.3
+
+info:
+  title: svc-perfilamiento — Perfilamiento de clientes
+  summary: Perfil de riesgo del cliente, combinando Open Finance y Open Data.
+  description: |
+    Construye el perfil de riesgo individualizado del cliente combinando, con
+    su consentimiento, señales de Open Finance y de Open Data, y produce los
+    factores de riesgo que habilitan un precio diferenciado en Cotización.
+
+    Historia funcional: caso insignia (seguro de vida hipotecario). NFR:
+    BITS-80 (latencia del procesamiento en background), relacionado con
+    §6.2 (escalabilidad, ≥20.000 perfilamientos/hora).
+    Diseño de referencia: página "Perfilamiento" de David (Confluence).
+
+    DISEÑO OBJETIVO (Confluence, Sección 8): el perfilamiento se dispara de
+    forma asíncrona por el evento ConsentimientoOtorgado de CoreTransaccional,
+    no durante ninguna petición síncrona del cliente. POST /perfiles expone
+    hoy, vía HTTP, lo que ese evento dispararía — no existe todavía un
+    consumidor real de Pub/Sub. GET /perfiles/{clienteId} sí es el contrato
+    final: una lectura barata del perfil ya calculado, la que usa Cotización.
+
+    Errores en formato RFC 9457 (Problem Details), application/problem+json.
+  version: 0.1.0
+  contact:
+    name: Equipo 4Bits
+  license:
+    name: Uso académico 4Bits
+
+servers:
+  - url: https://dev.solventa4bits.com/perfilamiento
+    description: Entorno de desarrollo
+
+tags:
+  - name: Perfilamiento
+    description: Cálculo, consulta e invalidación del perfil de riesgo del cliente.
+
+paths:
+  /perfiles:
+    post:
+      operationId: calcularPerfil
+      tags: [Perfilamiento]
+      summary: Calcula (o recalcula) el perfil de riesgo de un cliente
+      description: |
+        Consulta Open Finance y Open Data en paralelo (fan-out, timeout 500 ms
+        por fuente) y persiste el perfil resultante. Si una fuente no responde,
+        degrada parcialmente (AC-2 de BITS-106) en vez de fallar por completo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SolicitudPerfil' }
+      responses:
+        '201':
+          description: Perfil calculado y guardado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PerfilRiesgo' }
+        '400': { $ref: '#/components/responses/SolicitudInvalida' }
+
+  /perfiles/{clienteId}:
+    get:
+      operationId: obtenerPerfil
+      tags: [Perfilamiento]
+      summary: Consulta el perfil ya calculado de un cliente
+      description: |
+        Lectura síncrona y barata — no dispara ningún cómputo en vivo. Es lo
+        que le permite a Cotización cumplir su presupuesto de 250 ms (BITS-79)
+        sin heredar el presupuesto de 400 ms de Perfilamiento (BITS-80).
+      parameters:
+        - $ref: '#/components/parameters/ClienteId'
+      responses:
+        '200':
+          description: El perfil.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PerfilRiesgo' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+    delete:
+      operationId: invalidarPerfil
+      tags: [Perfilamiento]
+      summary: Invalida (borra) el perfil guardado de un cliente
+      description: Disparado, en el diseño objetivo, por ConsentimientoRevocado.
+      parameters:
+        - $ref: '#/components/parameters/ClienteId'
+      responses:
+        '204':
+          description: Perfil invalidado (o ya no existía).
+
+components:
+
+  parameters:
+    ClienteId:
+      name: clienteId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 64 }
+
+  responses:
+    SolicitudInvalida:
+      description: Solicitud mal formada o esquema inválido.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+    NoEncontrado:
+      description: No existe un perfil calculado para ese cliente.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+
+  schemas:
+
+    NivelRiesgo:
+      type: string
+      enum: [BAJO, MEDIO, ALTO]
+
+    EfectoFactor:
+      type: string
+      enum: [POSITIVO, NEGATIVO]
+
+    SolicitudPerfil:
+      type: object
+      additionalProperties: false
+      required: [clienteId, numeroDocumento]
+      properties:
+        clienteId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        numeroDocumento:
+          type: string
+          minLength: 4
+          maxLength: 20
+          description: Cédula o documento de identidad — clave de consulta hacia Open Finance/Open Data.
+
+    FactorRiesgo:
+      type: object
+      additionalProperties: false
+      required: [descripcion, efecto]
+      properties:
+        descripcion:
+          type: string
+          description: En lenguaje no técnico. No expone datos financieros crudos.
+        efecto: { $ref: '#/components/schemas/EfectoFactor' }
+        pesoRelativo: { type: number, minimum: 0, maximum: 1 }
+
+    PerfilRiesgo:
+      type: object
+      additionalProperties: false
+      required: [clienteId, nivelRiesgo, factorAjuste, factores, calculadoEn]
+      properties:
+        clienteId: { type: string }
+        nivelRiesgo: { $ref: '#/components/schemas/NivelRiesgo' }
+        factorAjuste:
+          type: number
+          description: Multiplicador que Cotización aplica a la prima base.
+        factores:
+          type: array
+          items: { $ref: '#/components/schemas/FactorRiesgo' }
+        fuentesNoDisponibles:
+          type: array
+          items: { type: string }
+          description: Fuentes que no respondieron a tiempo (degradación parcial).
+        calculadoEn: { type: string, format: date-time }
+
+    Problema:
+      description: Error en formato RFC 9457 (Problem Details for HTTP APIs).
+      type: object
+      properties:
+        type: { type: string, format: uri, default: 'about:blank' }
+        title: { type: string }
+        status: { type: integer, minimum: 100, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }
+        errores:
+          type: array
+          items:
+            type: object
+            properties:
+              campo: { type: string }
+              mensaje: { type: string }
