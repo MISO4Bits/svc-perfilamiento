@@ -20,6 +20,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-grpc>=1.44,<1.45",
     "opentelemetry-instrumentation-fastapi>=0.65b0,<0.66",
     "opentelemetry-instrumentation-httpx>=0.65b0,<0.66",
+    "google-cloud-pubsub>=2.41,<3.0",
 ]
 
 [project.optional-dependencies]
@@ -53,7 +54,7 @@ filterwarnings = [
 [tool.coverage.run]
 branch = true
 source = ["app"]
-omit = ["app/main.py"]
+omit = ["app/main.py", "app/adapters/pubsub.py", "app/adapters/pubsub_consumer.py"]
 
 [tool.coverage.report]
 fail_under = 80

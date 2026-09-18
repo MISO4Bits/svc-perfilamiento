@@ -168,3 +168,8 @@ def test_factory_adapters_no_soportado_lanza():
 async def test_dependencias_aclose_cierra_los_clientes_http():
     deps = build_dependencias(Settings(adapters="http"))
     await deps.aclose()  # no debe lanzar
+
+
+def test_factory_event_backend_logging_por_defecto():
+    deps = build_dependencias(Settings(adapters="fake"))
+    assert isinstance(deps.eventos, LoggingEventos)

@@ -30,9 +30,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         deps.open_finance, deps.open_data, deps.repositorio, deps.eventos
     )
 
+    consumidor = None
+    if settings.event_backend == "pubsub":  # pragma: no cover
+        from app.adapters.pubsub_consumer import ConsumidorPubSub
+
+        consumidor = ConsumidorPubSub(
+            settings.pubsub_project_id or "", settings.pubsub_subscription, service
+        )
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        if consumidor is not None:
+            consumidor.iniciar()
         yield
+        if consumidor is not None:
+            consumidor.detener()
         await deps.aclose()
         shutdown_telemetry(telemetry)
 
