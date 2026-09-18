@@ -41,10 +41,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         if consumidor is not None:
-            consumidor.iniciar()
+            consumidor.iniciar()  # pragma: no cover — requiere event_backend=pubsub (GCP real)
         yield
         if consumidor is not None:
-            consumidor.detener()
+            consumidor.detener()  # pragma: no cover — idem
         await deps.aclose()
         shutdown_telemetry(telemetry)
 
