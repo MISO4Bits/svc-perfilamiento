@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 import respx
 
 from app.domain import DependenciaNoDisponible
-from app.resilience import ResilientHttpClient, build_breaker
+from app.resilience import CircuitBreakerError, ResilientHttpClient, build_breaker
 
 BASE = "http://dep.local"
 
@@ -89,14 +91,29 @@ async def test_circuito_se_abre_y_falla_rapido():
 
 
 @respx.mock
-async def test_timeout_se_trata_como_transitorio():
-    respx.get(f"{BASE}/lento").mock(side_effect=httpx.ReadTimeout("timeout"))
-    http = _cliente(retries=1, fail_max=99)
+async def test_timeout_agotado_no_se_reintenta():
+    """Un timeout ya gastó el presupuesto de latencia: reintentar lo duplicaría
+    (EXP-02: 500 ms + 1 reintento = p99 de 1.04 s)."""
+    ruta = respx.get(f"{BASE}/lento").mock(side_effect=httpx.ReadTimeout("timeout"))
+    http = _cliente(retries=2, fail_max=99)
     try:
         with pytest.raises(DependenciaNoDisponible):
             await http.request("GET", "/lento")
     finally:
         await http.aclose()
+    assert ruta.call_count == 1
+
+
+@respx.mock
+async def test_timeout_de_conexion_tampoco_se_reintenta():
+    ruta = respx.get(f"{BASE}/lento").mock(side_effect=httpx.ConnectTimeout("timeout"))
+    http = _cliente(retries=2, fail_max=99)
+    try:
+        with pytest.raises(DependenciaNoDisponible):
+            await http.request("GET", "/lento")
+    finally:
+        await http.aclose()
+    assert ruta.call_count == 1
 
 
 def test_circuito_pasa_a_half_open_cuando_expira_el_reset():
@@ -133,3 +150,44 @@ async def test_pool_y_timeouts_configurados_explicitamente():
         assert http._client.timeout.pool == 0.05
     finally:
         await http.aclose()
+
+
+async def test_half_open_deja_pasar_una_sola_sonda():
+    """En semiabierto solo una llamada prueba la dependencia; el resto falla
+    rápido (EXP-02: antes todas pasaban y causaban una ráfaga lenta)."""
+    breaker = build_breaker("dep", fail_max=1, reset_timeout=0.0)
+    breaker._registrar_fallo()
+    assert breaker.state == "half_open"
+    liberar = asyncio.Event()
+    llamadas = 0
+
+    async def lenta() -> httpx.Response:
+        nonlocal llamadas
+        llamadas += 1
+        await liberar.wait()
+        return httpx.Response(200)
+
+    sonda = asyncio.create_task(breaker.call(lenta))
+    await asyncio.sleep(0)  # la sonda arranca y queda en curso
+    with pytest.raises(CircuitBreakerError):
+        await breaker.call(lenta)
+    liberar.set()
+    await sonda
+    assert llamadas == 1
+    assert breaker.state == "closed"
+
+
+async def test_sonda_fallida_reabre_el_circuito():
+    breaker = build_breaker("dep", fail_max=1, reset_timeout=30)
+    breaker._registrar_fallo()
+    breaker._opened_at -= 31  # venció el reset: pasa a semiabierto
+    assert breaker.state == "half_open"
+
+    async def falla() -> httpx.Response:
+        raise httpx.ReadTimeout("timeout")
+
+    with pytest.raises(httpx.ReadTimeout):
+        await breaker.call(falla)
+    assert breaker.state == "open"
+    with pytest.raises(CircuitBreakerError):
+        await breaker.call(falla)  # ya no se intenta hasta el próximo reset

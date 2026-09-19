@@ -1,10 +1,14 @@
 """Patrones de bajo nivel hacia dependencias HTTP: timeout + reintentos + circuit breaker.
 
 - **Timeout** por llamada (httpx) — presupuesto duro: 500 ms por fuente (BITS-106).
-- **Reintentos** con backoff exponencial + jitter (tenacity) solo ante fallos transitorios.
+- **Reintentos** con backoff exponencial + jitter (tenacity) solo ante fallos transitorios
+  *rápidos* (5xx de gateway o conexión rechazada). Un timeout agotado NO se reintenta:
+  ya gastó el presupuesto de latencia y reintentar lo duplicaría (EXP-02: p99 de 1.04 s).
 - **Circuit breaker** por dependencia (una instancia por fuente — Open Finance y
   Open Data se degradan de forma independiente): tras N fallos abre el circuito y
-  falla rápido durante ``reset_timeout`` en vez de castigar la latencia del journey.
+  falla rápido durante ``reset_timeout`` en vez de castigar la latencia del journey. En HALF_OPEN
+  deja pasar UNA sola llamada de prueba; el resto sigue fallando rápido hasta que
+  la sonda decida si cierra o reabre el circuito.
 
 Nota: ``pybreaker`` (la librería del stack) solo trae ``call_async`` sobre Tornado,
 no sobre asyncio; se usa aquí un breaker propio mínimo con la misma máquina de
@@ -28,12 +32,9 @@ from tenacity import (
 from app.domain import DependenciaNoDisponible
 
 _TRANSIENT_STATUS = {502, 503, 504}
-_TRANSIENT_EXCEPTIONS = (
-    httpx.ConnectError,
-    httpx.ConnectTimeout,
-    httpx.ReadTimeout,
-    httpx.WriteTimeout,
-)
+# Solo fallos que devuelven el control rápido son reintentables; los timeouts
+# (httpx.TimeoutException) ya consumieron el presupuesto y se tratan aparte.
+_TRANSIENT_EXCEPTIONS = (httpx.ConnectError,)
 
 
 logger = logging.getLogger("perfilamiento.resilience")
@@ -55,6 +56,7 @@ class AsyncCircuitBreaker:
         self._failures = 0
         self._state = "closed"
         self._opened_at = 0.0
+        self._sonda_en_curso = False
 
     @property
     def state(self) -> str:
@@ -63,15 +65,25 @@ class AsyncCircuitBreaker:
         return self._state
 
     async def call(self, operacion: Callable[[], Awaitable[httpx.Response]]) -> httpx.Response:
-        if self.state == "open":
+        estado = self.state
+        if estado == "open":
             raise CircuitBreakerError(f"circuito abierto: {self.name}")
+        es_sonda = estado == "half_open"
+        if es_sonda:
+            if self._sonda_en_curso:
+                raise CircuitBreakerError(f"circuito semiabierto, sonda en curso: {self.name}")
+            self._sonda_en_curso = True
         try:
             resultado = await operacion()
         except Exception:
             self._registrar_fallo()
             raise
-        self._registrar_exito()
-        return resultado
+        else:
+            self._registrar_exito()
+            return resultado
+        finally:
+            if es_sonda:
+                self._sonda_en_curso = False
 
     def _registrar_exito(self) -> None:
         if self._state != "closed":
@@ -139,6 +151,9 @@ class ResilientHttpClient:
                 # Pool agotado: reintentar solo suma espera al mismo cuello de
                 # botella — falla rápido, no se reintenta.
                 raise DependenciaNoDisponible(f"pool de conexiones agotado: {exc}") from exc
+            except httpx.TimeoutException as exc:
+                # Timeout agotado: el presupuesto ya se gastó; reintentar lo duplica.
+                raise DependenciaNoDisponible(f"timeout: {exc!r}") from exc
             except _TRANSIENT_EXCEPTIONS as exc:
                 raise _Transient(str(exc)) from exc
 
