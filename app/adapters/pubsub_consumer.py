@@ -23,11 +23,14 @@ import json
 import logging
 from datetime import datetime
 
+from opentelemetry import propagate, trace
+
 from app.consumidores import despachar_evento
 from app.domain import DomainEvent
 from app.services import PerfilamientoService
 
 logger = logging.getLogger("perfilamiento.adapters.pubsub_consumer")
+tracer = trace.get_tracer("perfilamiento.adapters.pubsub_consumer")
 
 
 class ConsumidorPubSub:  # pragma: no cover
@@ -62,19 +65,26 @@ class ConsumidorPubSub:  # pragma: no cover
         asyncio.run_coroutine_threadsafe(self._procesar(message), self._loop).result()
 
     async def _procesar(self, message) -> None:
-        try:
-            cuerpo = json.loads(message.data.decode("utf-8"))
-            evento = DomainEvent(
-                tipo=cuerpo["tipo"],
-                datos=cuerpo["datos"],
-                id=cuerpo["id"],
-                ocurrido_en=datetime.fromisoformat(cuerpo["ocurridoEn"]),
-            )
-            await despachar_evento(self._servicio, evento)
-        except Exception:
-            logger.exception(
-                "consumidor_pubsub: fallo procesando message_id=%s", message.message_id
-            )
-            message.nack()
-            return
-        message.ack()
+        # Extrae el traceparent (W3C) que el publicador inyectó como
+        # atributo del mensaje — sin esto, este procesamiento (y todo lo
+        # que dispara: llamadas a Open Finance/Open Data, el siguiente
+        # publish) queda sin span activo, desconectado del trace original
+        # que generó el evento.
+        contexto = propagate.extract(dict(message.attributes))
+        with tracer.start_as_current_span("perfilamiento.consumir_evento", context=contexto):
+            try:
+                cuerpo = json.loads(message.data.decode("utf-8"))
+                evento = DomainEvent(
+                    tipo=cuerpo["tipo"],
+                    datos=cuerpo["datos"],
+                    id=cuerpo["id"],
+                    ocurrido_en=datetime.fromisoformat(cuerpo["ocurridoEn"]),
+                )
+                await despachar_evento(self._servicio, evento)
+            except Exception:
+                logger.exception(
+                    "consumidor_pubsub: fallo procesando message_id=%s", message.message_id
+                )
+                message.nack()
+                return
+            message.ack()
