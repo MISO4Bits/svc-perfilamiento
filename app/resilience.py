@@ -33,7 +33,6 @@ _TRANSIENT_EXCEPTIONS = (
     httpx.ConnectTimeout,
     httpx.ReadTimeout,
     httpx.WriteTimeout,
-    httpx.PoolTimeout,
 )
 
 
@@ -100,9 +99,24 @@ class ResilientHttpClient:
         breaker: AsyncCircuitBreaker,
         timeout: float = 0.5,
         retries: int = 1,
+        pool_timeout: float = 0.1,
+        max_connections: int = 200,
+        max_keepalive_connections: int = 100,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._client = client or httpx.AsyncClient(base_url=base_url, timeout=timeout)
+        # `timeout` cubre conexión/lectura/escritura; la espera por una conexión
+        # libre del pool va aparte y corta (`pool_timeout`): con un solo número,
+        # un pool agotado hacía esperar el timeout completo y luego reintentar
+        # (cascada vista en bff-web, EXP-01: p99 de 4.67 s). Límites explícitos
+        # para reutilizar conexiones keep-alive en vez de los defaults de httpx.
+        self._client = client or httpx.AsyncClient(
+            base_url=base_url,
+            timeout=httpx.Timeout(timeout, pool=pool_timeout),
+            limits=httpx.Limits(
+                max_connections=max_connections,
+                max_keepalive_connections=max_keepalive_connections,
+            ),
+        )
         self._breaker = breaker
         self._retries = retries
 
@@ -121,6 +135,10 @@ class ResilientHttpClient:
                 return await self._breaker.call(_guarded)
             except CircuitBreakerError as exc:
                 raise DependenciaNoDisponible(str(exc)) from exc
+            except httpx.PoolTimeout as exc:
+                # Pool agotado: reintentar solo suma espera al mismo cuello de
+                # botella — falla rápido, no se reintenta.
+                raise DependenciaNoDisponible(f"pool de conexiones agotado: {exc}") from exc
             except _TRANSIENT_EXCEPTIONS as exc:
                 raise _Transient(str(exc)) from exc
 
