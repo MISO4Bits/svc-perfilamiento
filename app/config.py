@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     circuit_fail_max: int = 5
     circuit_reset_timeout_seconds: int = 30
 
+    # Publicación de eventos de dominio (``PerfilCalculado``) y consumo de
+    # ConsentimientoOtorgado/ConsentimientoRevocado: "logging" (default,
+    # local/tests, sin consumidor) | "pubsub" (real — también arranca el
+    # consumidor, ver adapters/pubsub_consumer.py). Un único tópico
+    # compartido con CoreTransaccional (ver iac-gcp-dev/modules/pubsub).
+    event_backend: str = "logging"
+    pubsub_project_id: str | None = None
+    pubsub_topic: str = "solventa-dominio"
+    pubsub_subscription: str = "perfilamiento-consentimiento"
+
     # Observabilidad (DI-008): OTLP/gRPC hacia Grafana Alloy dentro del
     # cluster. Deshabilitado por defecto — en local/tests no hay receptor
     # escuchando; se habilita vía PERF_OTEL_ENABLED=true en el manifiesto de

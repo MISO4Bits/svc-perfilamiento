@@ -8,6 +8,9 @@ def test_settings_por_defecto():
     assert s.service_name == "svc-perfilamiento"
     assert s.environment == "local"
     assert s.adapters == "fake"
+    assert s.event_backend == "logging"
+    assert s.pubsub_topic == "solventa-dominio"
+    assert s.pubsub_subscription == "perfilamiento-consentimiento"
 
 
 def test_settings_lee_prefijo_perf(monkeypatch):

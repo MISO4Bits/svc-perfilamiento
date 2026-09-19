@@ -26,9 +26,17 @@ class Dependencias:
                 await cerrar()
 
 
+def build_eventos(settings: Settings) -> EventosPort:
+    if settings.event_backend == "pubsub":  # pragma: no cover
+        from app.adapters.pubsub import PubSubEventPublisher
+
+        return PubSubEventPublisher(settings.pubsub_project_id or "", settings.pubsub_topic)
+    return LoggingEventos()
+
+
 def build_dependencias(settings: Settings) -> Dependencias:
     repositorio = FakePerfilRepository()  # persistencia real = fase posterior
-    eventos = LoggingEventos()  # Pub/Sub real = fase posterior
+    eventos = build_eventos(settings)
 
     if settings.adapters == "fake":
         return Dependencias(
