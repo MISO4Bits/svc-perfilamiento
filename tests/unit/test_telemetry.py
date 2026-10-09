@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import logging
 
+import opentelemetry.metrics._internal as otel_metrics_internal
+import opentelemetry.trace as otel_trace_module
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from opentelemetry import context as otel_context
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.semconv._incubating.attributes import code_attributes
+from opentelemetry.util._once import Once
 
 from app.config import Settings
 from app.telemetry import (
@@ -20,6 +26,37 @@ def _settings(**overrides) -> Settings:
     return Settings(adapters="fake", **overrides)
 
 
+@pytest.fixture(autouse=True)
+def _contexto_otel_limpio():
+    """``opentelemetry.trace`` y ``opentelemetry.metrics`` guardan el
+    ``TracerProvider``/``MeterProvider`` activo en variables de modulo
+    protegidas por un ``Once()``: solo se fijan una vez por proceso, no por
+    test. Se resetean antes de cada test y se adjunta un contexto vacio, para
+    que ningun span de un test previo quede activo en el siguiente. Mismo
+    patron que bff-web y svc-core.
+    """
+    otel_trace_module._TRACER_PROVIDER = None
+    otel_trace_module._TRACER_PROVIDER_SET_ONCE = Once()
+    otel_metrics_internal._METER_PROVIDER = None
+    otel_metrics_internal._METER_PROVIDER_SET_ONCE = Once()
+    token = otel_context.attach(otel_context.Context())
+    try:
+        yield
+    finally:
+        otel_context.detach(token)
+
+
+@pytest.fixture
+def _sin_fuga_de_instrumentacion_httpx():
+    """``HTTPXClientInstrumentor`` parcha ``httpx`` a nivel de proceso, no por
+    app. Sin desinstrumentar al terminar, cualquier request httpx posterior
+    (incluida la de ``TestClient``) hereda un span activo, aunque el siguiente
+    test use ``otel_enabled=False``. Ver
+    ``test_no_agrega_x_trace_id_sin_otel_habilitado``."""
+    yield
+    HTTPXClientInstrumentor().uninstrument()
+
+
 def test_setup_telemetry_deshabilitado_no_hace_nada():
     app = FastAPI()
     telemetry = setup_telemetry(app, _settings(otel_enabled=False))
@@ -28,7 +65,7 @@ def test_setup_telemetry_deshabilitado_no_hace_nada():
     shutdown_telemetry(telemetry)  # no debe lanzar con None
 
 
-def test_setup_telemetry_habilitado_instrumenta_la_app():
+def test_setup_telemetry_habilitado_instrumenta_la_app(_sin_fuga_de_instrumentacion_httpx):
     app = FastAPI()
     telemetry = setup_telemetry(app, _settings(otel_enabled=True))
 
@@ -42,7 +79,9 @@ def test_setup_telemetry_habilitado_instrumenta_la_app():
         shutdown_telemetry(telemetry)
 
 
-def test_setup_telemetry_habilita_propagacion_de_logs_de_uvicorn():
+def test_setup_telemetry_habilita_propagacion_de_logs_de_uvicorn(
+    _sin_fuga_de_instrumentacion_httpx,
+):
     for logger_name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
         logging.getLogger(logger_name).propagate = False
 
@@ -56,7 +95,7 @@ def test_setup_telemetry_habilita_propagacion_de_logs_de_uvicorn():
         shutdown_telemetry(telemetry)
 
 
-def test_agrega_x_trace_id_cuando_hay_un_span_activo():
+def test_agrega_x_trace_id_cuando_hay_un_span_activo(_sin_fuga_de_instrumentacion_httpx):
     app = FastAPI()
     telemetry = setup_telemetry(app, _settings(otel_enabled=True))
     agregar_encabezado_trace_id(app)
@@ -119,7 +158,9 @@ def test_el_texto_del_log_trae_trace_id_y_span_id_sin_span_activo():
     assert texto == "perfil calculado trace_id=- span_id=-"
 
 
-def test_el_texto_del_log_trae_trace_id_y_span_id_reales_con_span_activo():
+def test_el_texto_del_log_trae_trace_id_y_span_id_reales_con_span_activo(
+    _sin_fuga_de_instrumentacion_httpx,
+):
     app = FastAPI()
     telemetry = setup_telemetry(app, _settings(otel_enabled=True))
     handler = _handler_de_prueba()
