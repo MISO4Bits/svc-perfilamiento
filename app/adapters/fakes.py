@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 
 from app.domain import (
+    ConsentimientoFuente,
+    ConsultaGuardada,
     DependenciaNoDisponible,
     DomainEvent,
+    Fuente,
+    Hipoteca,
     PerfilRiesgo,
     RecursoNoEncontrado,
     SenalOpenData,
@@ -30,6 +35,15 @@ class FakeOpenFinance:
             nivel_endeudamiento="MEDIO",
             historial_pagos="BUENO",
             productos_activos=2,
+            hipotecas=(
+                Hipoteca(
+                    entidad_acreedora="BBVA COLOMBIA S.A.",
+                    valor_credito=Decimal("200000000"),
+                    saldo_insoluto=Decimal("160000000"),
+                    plazo_restante_meses=180,
+                    cuota_mensual=Decimal("2100000"),
+                ),
+            ),
         )
 
 
@@ -74,3 +88,33 @@ class LoggingEventos:
         # evento.datos puede traer datos sensibles del perfil — no se
         # loguea tal cual, solo el tipo y el id del evento.
         logger.info("evento_dominio: tipo=%s id=%s", evento.tipo, evento.id)
+
+
+class FakeSenalesRepository:
+    """Consentimientos y señales por cliente en memoria."""
+
+    def __init__(self) -> None:
+        self._consentimientos: dict[tuple[str, Fuente], ConsentimientoFuente] = {}
+        self._senales: dict[tuple[str, Fuente], ConsultaGuardada] = {}
+
+    async def guardar_consentimiento(self, consentimiento: ConsentimientoFuente) -> None:
+        self._consentimientos[(consentimiento.cliente_id, consentimiento.fuente)] = consentimiento
+
+    async def obtener_consentimiento(
+        self, cliente_id: str, fuente: Fuente
+    ) -> ConsentimientoFuente | None:
+        return self._consentimientos.get((cliente_id, fuente))
+
+    async def eliminar_consentimiento(self, cliente_id: str, fuente: Fuente) -> None:
+        self._consentimientos.pop((cliente_id, fuente), None)
+
+    async def guardar_senal(
+        self, cliente_id: str, fuente: Fuente, consulta: ConsultaGuardada
+    ) -> None:
+        self._senales[(cliente_id, fuente)] = consulta
+
+    async def obtener_senal(self, cliente_id: str, fuente: Fuente) -> ConsultaGuardada | None:
+        return self._senales.get((cliente_id, fuente))
+
+    async def eliminar_senal(self, cliente_id: str, fuente: Fuente) -> None:
+        self._senales.pop((cliente_id, fuente), None)

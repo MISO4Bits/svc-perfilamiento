@@ -11,7 +11,15 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from app.domain import DomainEvent, PerfilRiesgo, SenalOpenData, SenalOpenFinance
+from app.domain import (
+    ConsentimientoFuente,
+    ConsultaGuardada,
+    DomainEvent,
+    Fuente,
+    PerfilRiesgo,
+    SenalOpenData,
+    SenalOpenFinance,
+)
 
 
 @runtime_checkable
@@ -50,6 +58,39 @@ class PerfilRepositoryPort(Protocol):
     async def eliminar(self, cliente_id: str) -> None:
         """Invalida el perfil guardado (disparado por ``ConsentimientoRevocado``).
         Silencioso si no existía."""
+        ...
+
+
+@runtime_checkable
+class SenalesRepositoryPort(Protocol):
+    """Consentimiento vigente por fuente y última señal traída de cada una.
+
+    Es lo que permite revocar una sola fuente (se borra su consentimiento y su
+    señal y el perfil se recalcula con las demás, sin consultar a nadie) y
+    reconsultar solo lo vencido. La vigencia no la decide el repositorio: el
+    servicio compara ``consultado_en`` con su ventana.
+    """
+
+    async def guardar_consentimiento(self, consentimiento: ConsentimientoFuente) -> None: ...
+
+    async def obtener_consentimiento(
+        self, cliente_id: str, fuente: Fuente
+    ) -> ConsentimientoFuente | None: ...
+
+    async def eliminar_consentimiento(self, cliente_id: str, fuente: Fuente) -> None:
+        """Silencioso si no existía."""
+        ...
+
+    async def guardar_senal(
+        self, cliente_id: str, fuente: Fuente, consulta: ConsultaGuardada
+    ) -> None:
+        """Persiste (o reemplaza) la señal de esa fuente."""
+        ...
+
+    async def obtener_senal(self, cliente_id: str, fuente: Fuente) -> ConsultaGuardada | None: ...
+
+    async def eliminar_senal(self, cliente_id: str, fuente: Fuente) -> None:
+        """Silencioso si no existía."""
         ...
 
 

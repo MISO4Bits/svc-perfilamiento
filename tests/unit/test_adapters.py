@@ -173,3 +173,57 @@ async def test_dependencias_aclose_cierra_los_clientes_http():
 def test_factory_event_backend_logging_por_defecto():
     deps = build_dependencias(Settings(adapters="fake"))
     assert isinstance(deps.eventos, LoggingEventos)
+
+
+@respx.mock
+async def test_open_finance_client_conserva_solo_las_hipotecas_abiertas():
+    respx.post(f"{BASE}/v1/perfil-crediticio").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "scoreCrediticio": 690,
+                "nivelEndeudamiento": "MEDIO",
+                "historialPagos": "BUENO",
+                "productosActivos": 4,
+                "obligaciones": [
+                    {
+                        "tipoProducto": "hipotecario",
+                        "estado": "abierta",
+                        "entidadAcreedora": "BANCOLOMBIA S.A.",
+                        "valorCredito": 280000000,
+                        "saldoInsoluto": 231000000,
+                        "plazoRestanteMeses": 190,
+                        "cuotaMensual": 2650000,
+                        "garantia": {"direccion": "no se conserva"},
+                    },
+                    {
+                        "tipoProducto": "hipotecario",
+                        "estado": "cerrada",
+                        "entidadAcreedora": "DAVIVIENDA S.A.",
+                        "valorCredito": 1,
+                        "saldoInsoluto": 0,
+                        "plazoRestanteMeses": 1,
+                        "cuotaMensual": 1,
+                    },
+                    {
+                        "tipoProducto": "tarjeta_credito",
+                        "estado": "abierta",
+                        "entidadAcreedora": "BANCO FALABELLA S.A.",
+                        "saldoInsoluto": 4600000,
+                    },
+                ],
+            },
+        )
+    )
+    adaptador = OpenFinanceClientAdapter(_http())
+    try:
+        senal = await adaptador.consultar("1000000005")
+    finally:
+        await adaptador.aclose()
+
+    assert len(senal.hipotecas) == 1
+    hipoteca = senal.hipotecas[0]
+    assert hipoteca.entidad_acreedora == "BANCOLOMBIA S.A."
+    assert hipoteca.saldo_insoluto == 231000000
+    assert hipoteca.plazo_restante_meses == 190
+    assert senal.productos_activos == 4

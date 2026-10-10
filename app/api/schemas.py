@@ -50,3 +50,18 @@ class PerfilRiesgoOut(_Model):
     factores: list[FactorRiesgoOut]
     fuentes_no_disponibles: list[str] = Field(default_factory=list)
     calculado_en: datetime
+
+
+class HipotecaOut(_Model):
+    entidad_acreedora: str
+    valor_credito: float
+    saldo_insoluto: float
+    plazo_restante_meses: int
+    cuota_mensual: float
+
+
+class CreditosHipotecariosOut(_Model):
+    estado: Literal["DISPONIBLE", "SIN_HIPOTECAS", "SIN_CONSENTIMIENTO", "NO_DISPONIBLE"]
+    hipotecas: list[HipotecaOut]
+    origen: Literal["OPEN_FINANCE"] = "OPEN_FINANCE"
+    fecha_consulta: datetime | None = None
