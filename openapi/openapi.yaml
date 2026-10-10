@@ -14,11 +14,14 @@ info:
     Diseño de referencia: página "Perfilamiento" de David (Confluence).
 
     DISEÑO OBJETIVO (Confluence, Sección 8): el perfilamiento se dispara de
-    forma asíncrona por el evento ConsentimientoOtorgado de CoreTransaccional,
-    no durante ninguna petición síncrona del cliente. POST /perfiles expone
-    hoy, vía HTTP, lo que ese evento dispararía — no existe todavía un
-    consumidor real de Pub/Sub. GET /perfiles/{clienteId} sí es el contrato
-    final: una lectura barata del perfil ya calculado, la que usa Cotización.
+    forma asíncrona por los eventos de CoreTransaccional (ClienteRegistrado, que
+    trae el consentimiento de cada fuente, y ConsentimientoOtorgado /
+    ConsentimientoRevocado, de una sola fuente), no durante ninguna petición
+    síncrona del cliente. Cada fuente se consulta una vez y su señal se guarda
+    24 horas; vencida, se reconsulta de forma perezosa al leer los créditos
+    hipotecarios. POST /perfiles expone, vía HTTP, lo que esos eventos
+    dispararían. GET /perfiles/{clienteId} es una lectura barata del perfil ya
+    calculado, la que usa Cotización.
 
     Errores en formato RFC 9457 (Problem Details), application/problem+json.
   version: 0.1.0
@@ -34,6 +37,8 @@ servers:
 tags:
   - name: Perfilamiento
     description: Cálculo, consulta e invalidación del perfil de riesgo del cliente.
+  - name: Créditos hipotecarios
+    description: Hipotecas abiertas del cliente, traídas de Open Finance con su consentimiento.
 
 paths:
   /perfiles:
@@ -80,12 +85,36 @@ paths:
       operationId: invalidarPerfil
       tags: [Perfilamiento]
       summary: Invalida (borra) el perfil guardado de un cliente
-      description: Disparado, en el diseño objetivo, por ConsentimientoRevocado.
+      description: |
+        Borra todo lo guardado del cliente: consentimientos, señales de las
+        fuentes y perfil. Revocar una sola fuente llega por el evento
+        ConsentimientoRevocado y solo borra lo de esa fuente.
       parameters:
         - $ref: '#/components/parameters/ClienteId'
       responses:
         '204':
           description: Perfil invalidado (o ya no existía).
+
+  /clientes/{clienteId}/creditos-hipotecarios:
+    get:
+      operationId: obtenerCreditosHipotecarios
+      tags: [Créditos hipotecarios]
+      summary: Hipotecas abiertas del cliente, para la pantalla previa a cotizar
+      description: |
+        Responde con lo que ya se guardó de Open Finance al otorgarse el
+        consentimiento; no consulta la fuente mientras la señal esté vigente
+        (24 horas). Si venció o nunca llegó, reconsulta una vez (timeout 500 ms).
+        Si eso falla responde estado NO_DISPONIBLE, y el cliente captura los
+        datos a mano. Siempre responde 200: el motivo de que no haya hipotecas va
+        en `estado`.
+      parameters:
+        - $ref: '#/components/parameters/ClienteId'
+      responses:
+        '200':
+          description: Las hipotecas abiertas, o el motivo por el que no hay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreditosHipotecarios' }
 
 components:
 
@@ -162,6 +191,42 @@ components:
           items: { type: string }
           description: Fuentes que no respondieron a tiempo (degradación parcial).
         calculadoEn: { type: string, format: date-time }
+
+    Hipoteca:
+      type: object
+      additionalProperties: false
+      required: [entidadAcreedora, valorCredito, saldoInsoluto, plazoRestanteMeses, cuotaMensual]
+      properties:
+        entidadAcreedora:
+          type: string
+          description: Nombre de la entidad tal como lo reporta la fuente (p. ej. BANCOLOMBIA S.A.).
+        valorCredito: { type: number, description: Monto total del crédito, en COP. }
+        saldoInsoluto: { type: number, description: Saldo a hoy, en COP. }
+        plazoRestanteMeses: { type: integer, minimum: 1, description: Meses que faltan. }
+        cuotaMensual: { type: number, description: Cuota mensual, en COP. }
+
+    CreditosHipotecarios:
+      type: object
+      additionalProperties: false
+      required: [estado, hipotecas, origen]
+      properties:
+        estado:
+          type: string
+          enum: [DISPONIBLE, SIN_HIPOTECAS, SIN_CONSENTIMIENTO, NO_DISPONIBLE]
+          description: |
+            DISPONIBLE: hay hipotecas abiertas. SIN_HIPOTECAS: la fuente respondió y no
+            hay ninguna. SIN_CONSENTIMIENTO: el cliente no autorizó Open Finance.
+            NO_DISPONIBLE: no hay datos vigentes y la fuente no respondió.
+        hipotecas:
+          type: array
+          items: { $ref: '#/components/schemas/Hipoteca' }
+        origen:
+          type: string
+          enum: [OPEN_FINANCE]
+        fechaConsulta:
+          type: string
+          format: date-time
+          description: Cuándo se trajeron los datos de la fuente. Ausente si no hay datos.
 
     Problema:
       description: Error en formato RFC 9457 (Problem Details for HTTP APIs).

@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.adapters.fakes import FakePerfilRepository, LoggingEventos
+from app.adapters.fakes import FakePerfilRepository, FakeSenalesRepository, LoggingEventos
 from app.domain import (
     DependenciaNoDisponible,
     NivelRiesgo,
@@ -94,7 +94,13 @@ def test_calcular_perfil_riesgo_conserva_fuentes_no_disponibles():
 
 
 def _servicio(open_finance, open_data) -> PerfilamientoService:
-    return PerfilamientoService(open_finance, open_data, FakePerfilRepository(), LoggingEventos())
+    return PerfilamientoService(
+        open_finance,
+        open_data,
+        FakePerfilRepository(),
+        LoggingEventos(),
+        FakeSenalesRepository(),
+    )
 
 
 async def test_calcular_perfil_camino_feliz_ambas_fuentes_disponibles():

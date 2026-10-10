@@ -4,11 +4,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.adapters.fakes import FakeOpenData, FakeOpenFinance, FakePerfilRepository, LoggingEventos
+from app.adapters.fakes import (
+    FakeOpenData,
+    FakeOpenFinance,
+    FakePerfilRepository,
+    FakeSenalesRepository,
+    LoggingEventos,
+)
 from app.adapters.opendata_client import OpenDataClientAdapter
 from app.adapters.openfinance_client import OpenFinanceClientAdapter
+from app.adapters.sqlite import SqliteDatabase, SqlitePerfilRepository, SqliteSenalesRepository
 from app.config import Settings
-from app.ports import EventosPort, OpenDataPort, OpenFinancePort, PerfilRepositoryPort
+from app.ports import (
+    EventosPort,
+    OpenDataPort,
+    OpenFinancePort,
+    PerfilRepositoryPort,
+    SenalesRepositoryPort,
+)
 from app.resilience import ResilientHttpClient, build_breaker
 
 
@@ -17,7 +30,14 @@ class Dependencias:
     open_finance: OpenFinancePort
     open_data: OpenDataPort
     repositorio: PerfilRepositoryPort
+    senales: SenalesRepositoryPort
     eventos: EventosPort
+    database: SqliteDatabase | None = None
+
+    async def init(self) -> None:
+        """Crea el esquema si la persistencia está respaldada por SQLite."""
+        if self.database is not None:
+            await self.database.init()
 
     async def aclose(self) -> None:
         for adaptador in (self.open_finance, self.open_data):
@@ -34,8 +54,19 @@ def build_eventos(settings: Settings) -> EventosPort:
     return LoggingEventos()
 
 
+def build_persistencia(
+    settings: Settings,
+) -> tuple[PerfilRepositoryPort, SenalesRepositoryPort, SqliteDatabase | None]:
+    if settings.repository_backend == "memory":
+        return FakePerfilRepository(), FakeSenalesRepository(), None
+    if settings.repository_backend == "sqlite":
+        db = SqliteDatabase(settings.database_path)
+        return SqlitePerfilRepository(db), SqliteSenalesRepository(db), db
+    raise ValueError(f"repository_backend no soportado: {settings.repository_backend}")
+
+
 def build_dependencias(settings: Settings) -> Dependencias:
-    repositorio = FakePerfilRepository()  # persistencia real = fase posterior
+    repositorio, senales, database = build_persistencia(settings)
     eventos = build_eventos(settings)
 
     if settings.adapters == "fake":
@@ -43,7 +74,9 @@ def build_dependencias(settings: Settings) -> Dependencias:
             open_finance=FakeOpenFinance(),
             open_data=FakeOpenData(),
             repositorio=repositorio,
+            senales=senales,
             eventos=eventos,
+            database=database,
         )
 
     if settings.adapters == "http":
@@ -71,7 +104,9 @@ def build_dependencias(settings: Settings) -> Dependencias:
             open_finance=OpenFinanceClientAdapter(http_of),
             open_data=OpenDataClientAdapter(http_od),
             repositorio=repositorio,
+            senales=senales,
             eventos=eventos,
+            database=database,
         )
 
     raise ValueError(f"adapters no soportado: {settings.adapters}")

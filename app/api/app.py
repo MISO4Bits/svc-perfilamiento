@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -27,7 +28,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     deps = build_dependencias(settings)
     service = PerfilamientoService(
-        deps.open_finance, deps.open_data, deps.repositorio, deps.eventos
+        deps.open_finance,
+        deps.open_data,
+        deps.repositorio,
+        deps.eventos,
+        deps.senales,
+        vigencia=timedelta(hours=settings.senal_vigencia_horas),
     )
 
     consumidor = None
@@ -40,6 +46,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        await deps.init()
         if consumidor is not None:
             consumidor.iniciar()  # pragma: no cover — requiere event_backend=pubsub (GCP real)
         yield

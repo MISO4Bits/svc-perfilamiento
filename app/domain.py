@@ -69,7 +69,35 @@ class EfectoFactor(StrEnum):
     NEGATIVO = "NEGATIVO"
 
 
+class Fuente(StrEnum):
+    """Fuente externa de datos. El valor coincide con el ``scope`` del consentimiento
+    que publica CoreTransaccional."""
+
+    OPEN_FINANCE = "OPEN_FINANCE"
+    OPEN_DATA = "OPEN_DATA"
+
+    @property
+    def nombre(self) -> str:
+        """Nombre con el que ``fuentes_no_disponibles`` identifica la fuente."""
+        return "open-finance" if self is Fuente.OPEN_FINANCE else "open-data"
+
+
 # --- señales de las fuentes externas (Open Finance / Open Data) ---
+
+
+@dataclass(frozen=True)
+class Hipoteca:
+    """Crédito hipotecario abierto del cliente, tal como lo reporta Open Finance.
+
+    Solo lo que la pantalla de cotización necesita: del reporte completo se
+    descarta el resto (garantía, mora, otras obligaciones).
+    """
+
+    entidad_acreedora: str
+    valor_credito: Decimal
+    saldo_insoluto: Decimal
+    plazo_restante_meses: int
+    cuota_mensual: Decimal
 
 
 @dataclass(frozen=True)
@@ -78,6 +106,7 @@ class SenalOpenFinance:
     nivel_endeudamiento: str
     historial_pagos: str
     productos_activos: int
+    hipotecas: tuple[Hipoteca, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -86,6 +115,41 @@ class SenalOpenData:
     departamento: str
     ciudad: str
     categoria_salud_actuarial: str
+
+
+# --- consentimiento y señales guardadas por cliente ---
+
+
+@dataclass(frozen=True)
+class ConsentimientoFuente:
+    """Consentimiento vigente de un cliente sobre una fuente. Guarda el documento
+    para poder reconsultar cuando la señal vence, sin llamar de vuelta a Core."""
+
+    cliente_id: str
+    fuente: Fuente
+    numero_documento: str
+
+
+@dataclass(frozen=True)
+class ConsultaGuardada:
+    """Última señal traída de una fuente y cuándo se trajo."""
+
+    senal: SenalOpenFinance | SenalOpenData
+    consultado_en: datetime
+
+
+class EstadoCreditos(StrEnum):
+    DISPONIBLE = "DISPONIBLE"
+    SIN_HIPOTECAS = "SIN_HIPOTECAS"
+    SIN_CONSENTIMIENTO = "SIN_CONSENTIMIENTO"
+    NO_DISPONIBLE = "NO_DISPONIBLE"
+
+
+@dataclass(frozen=True)
+class CreditosHipotecarios:
+    estado: EstadoCreditos
+    hipotecas: tuple[Hipoteca, ...] = ()
+    consultado_en: datetime | None = None
 
 
 # --- perfil de riesgo (lo que persiste y lo que consulta Cotización) ---

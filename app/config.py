@@ -17,6 +17,16 @@ class Settings(BaseSettings):
     # Open Data reales — en dev, el mock de WireMock, ver deploy/apps/wiremock).
     adapters: str = "fake"
 
+    # Persistencia de perfiles, consentimientos y señales: "memory" (default,
+    # pruebas) | "sqlite" (dev). Cuando se adopte Cloud Spanner (DI-009) se añade
+    # un adaptador con los mismos puertos.
+    repository_backend: str = "memory"
+    database_path: str = "./svc_perfilamiento.db"
+
+    # Vigencia de la señal guardada de cada fuente; vencida, se reconsulta de
+    # forma perezosa al leerla (ver PerfilamientoService).
+    senal_vigencia_horas: int = 24
+
     # Modo "http": cada fuente es un host/prefijo distinto aunque ambas
     # apunten hoy al mismo pod de WireMock (paths /open-finance, /open-data).
     open_finance_base_url: str = "http://localhost:8090/open-finance"
@@ -27,7 +37,7 @@ class Settings(BaseSettings):
     circuit_reset_timeout_seconds: int = 30
 
     # Publicación de eventos de dominio (``PerfilCalculado``) y consumo de
-    # ConsentimientoOtorgado/ConsentimientoRevocado: "logging" (default,
+    # ClienteRegistrado/ConsentimientoOtorgado/ConsentimientoRevocado: "logging" (default,
     # local/tests, sin consumidor) | "pubsub" (real — también arranca el
     # consumidor, ver adapters/pubsub_consumer.py). Un único tópico
     # compartido con CoreTransaccional (ver iac-gcp-dev/modules/pubsub).

@@ -71,3 +71,14 @@ async def test_el_servicio_publica_el_contrato(client):
     resp = await client.get("/openapi.yaml")
     assert resp.status_code == 200
     assert "perfiles" in resp.text
+
+
+async def test_respuesta_de_creditos_hipotecarios_cumple_el_contrato(client, openapi_spec):
+    sin_consentimiento = await client.get("/clientes/cli-1/creditos-hipotecarios")
+    assert sin_consentimiento.status_code == 200
+    _validar(openapi_spec, "CreditosHipotecarios", sin_consentimiento.json())
+
+    await client.post("/perfiles", json=SOLICITUD_VALIDA)
+    disponible = await client.get("/clientes/cli-1/creditos-hipotecarios")
+    assert disponible.status_code == 200
+    _validar(openapi_spec, "CreditosHipotecarios", disponible.json())

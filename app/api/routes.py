@@ -1,11 +1,11 @@
 """Rutas HTTP del servicio de Perfilamiento.
 
-``POST /perfiles`` representa hoy, vía HTTP, lo que en el diseño objetivo
-dispara el evento ``ConsentimientoOtorgado`` de CoreTransaccional (ver la
-página de componente "Perfilamiento", Sección 8) — no existe todavía un
-consumidor real de Pub/Sub. ``GET``/``DELETE`` sí son el contrato final:
-lectura barata del perfil ya calculado, e invalidación por
-``ConsentimientoRevocado``.
+``POST /perfiles`` representa, vía HTTP, lo que en el diseño objetivo
+disparan los eventos de CoreTransaccional (``ClienteRegistrado`` y
+``ConsentimientoOtorgado``, ver la página de componente "Perfilamiento",
+Sección 8). ``GET``/``DELETE`` son el contrato final: lectura barata del perfil
+ya calculado e invalidación. ``GET /clientes/{id}/creditos-hipotecarios`` sirve
+lo que ya se guardó de Open Finance, sin consultar la fuente mientras esté vigente.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response, status
 
-from app.api.schemas import PerfilRiesgoOut, SolicitudPerfilIn
+from app.api.schemas import CreditosHipotecariosOut, PerfilRiesgoOut, SolicitudPerfilIn
 from app.logging_utils import sanear_para_log
 from app.services import PerfilamientoService
 
@@ -55,3 +55,32 @@ async def invalidar_perfil(cliente_id: str, service: ServiceDep) -> Response:
     logger.info("DELETE /perfiles/%s: solicitud recibida", sanear_para_log(cliente_id))
     await service.invalidar_perfil(cliente_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/clientes/{cliente_id}/creditos-hipotecarios",
+    response_model=CreditosHipotecariosOut,
+    response_model_exclude_none=True,
+    tags=["Créditos hipotecarios"],
+)
+async def obtener_creditos_hipotecarios(
+    cliente_id: str, service: ServiceDep
+) -> CreditosHipotecariosOut:
+    logger.info(
+        "GET /clientes/%s/creditos-hipotecarios: solicitud recibida", sanear_para_log(cliente_id)
+    )
+    creditos = await service.obtener_creditos_hipotecarios(cliente_id)
+    return CreditosHipotecariosOut(
+        estado=str(creditos.estado),
+        hipotecas=[
+            {
+                "entidad_acreedora": h.entidad_acreedora,
+                "valor_credito": h.valor_credito,
+                "saldo_insoluto": h.saldo_insoluto,
+                "plazo_restante_meses": h.plazo_restante_meses,
+                "cuota_mensual": h.cuota_mensual,
+            }
+            for h in creditos.hipotecas
+        ],
+        fecha_consulta=creditos.consultado_en,
+    )
