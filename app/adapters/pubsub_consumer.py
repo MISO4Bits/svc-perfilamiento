@@ -46,7 +46,24 @@ class ConsumidorPubSub:  # pragma: no cover
     def iniciar(self) -> None:
         self._loop = asyncio.get_running_loop()
         self._future = self._subscriber.subscribe(self._subscription_path, callback=self._callback)
+        # Si la conexión falla (sin permiso, suscripción inexistente o borrada), la
+        # librería solo termina este future: sin este aviso el servicio sigue "vivo" y
+        # sin consumir, sin ningún error en los logs.
+        self._future.add_done_callback(self._al_terminar)
         logger.info("consumidor_pubsub: escuchando subscription=%s", self._subscription_path)
+
+    def _al_terminar(self, future) -> None:
+        if future.cancelled():
+            return  # cancelado por detener(): cierre normal
+        error = future.exception()
+        if error is not None:
+            logger.error(
+                "consumidor_pubsub: el consumo TERMINÓ con error y ya no se reciben eventos "
+                "subscription=%s error=%s: %s",
+                self._subscription_path,
+                type(error).__name__,
+                error,
+            )
 
     def detener(self) -> None:
         if self._future is not None:
@@ -72,6 +89,12 @@ class ConsumidorPubSub:  # pragma: no cover
         # que generó el evento.
         contexto = propagate.extract(dict(message.attributes))
         with tracer.start_as_current_span("perfilamiento.consumir_evento", context=contexto):
+            logger.info(
+                "consumidor_pubsub: mensaje recibido message_id=%s tipo=%s intento_entrega=%s",
+                message.message_id,
+                message.attributes.get("tipo", "-"),
+                getattr(message, "delivery_attempt", None) or "-",
+            )
             try:
                 cuerpo = json.loads(message.data.decode("utf-8"))
                 evento = DomainEvent(
