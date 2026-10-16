@@ -141,7 +141,8 @@ def test_calcular_perfil_riesgo_ejemplos_de_la_historia(
 )
 def test_calcular_perfil_riesgo_cada_ajuste_deja_su_factor(endeudamiento, historial, salud):
     """AC-4: los factores explican todo el precio. Sin límites de por medio, el factor de
-    ajuste es 1,00 más los ajustes de los factores guardados (positivo suma, negativo resta)."""
+    ajuste es 1,00 más los ajustes de los factores guardados (un factor negativo suma y uno
+    positivo resta)."""
     perfil = calcular_perfil_riesgo("cli-1", _of(endeudamiento, historial), _od(salud), ())
     ajustes = {
         "Endeudamiento alto": Decimal("0.30"),
