@@ -20,7 +20,7 @@ async def test_sin_consentimiento_no_hay_hipotecas(client):
 
 
 async def test_con_consentimiento_devuelve_lo_guardado(client):
-    await client.post("/perfiles", json=SOLICITUD)
+    await client.post("/v1/perfiles", json=SOLICITUD)
 
     resp = await client.get("/clientes/cli-1/creditos-hipotecarios")
 
@@ -40,8 +40,8 @@ async def test_con_consentimiento_devuelve_lo_guardado(client):
 
 
 async def test_invalidar_borra_tambien_los_creditos(client):
-    await client.post("/perfiles", json=SOLICITUD)
-    await client.delete("/perfiles/cli-1")
+    await client.post("/v1/perfiles", json=SOLICITUD)
+    await client.delete("/v1/perfiles/cli-1")
 
     resp = await client.get("/clientes/cli-1/creditos-hipotecarios")
 

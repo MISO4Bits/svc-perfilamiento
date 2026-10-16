@@ -19,8 +19,8 @@ info:
     ConsentimientoRevocado, de una sola fuente), no durante ninguna petición
     síncrona del cliente. Cada fuente se consulta una vez y su señal se guarda
     24 horas; vencida, se reconsulta de forma perezosa al leer los créditos
-    hipotecarios. POST /perfiles expone, vía HTTP, lo que esos eventos
-    dispararían. GET /perfiles/{clienteId} es una lectura barata del perfil ya
+    hipotecarios. POST /v1/perfiles expone, vía HTTP, lo que esos eventos
+    dispararían. GET /v1/perfiles/{clienteId} es una lectura barata del perfil ya
     calculado, la que usa Cotización.
 
     Errores en formato RFC 9457 (Problem Details), application/problem+json.
@@ -41,7 +41,7 @@ tags:
     description: Hipotecas abiertas del cliente, traídas de Open Finance con su consentimiento.
 
 paths:
-  /perfiles:
+  /v1/perfiles:
     post:
       operationId: calcularPerfil
       tags: [Perfilamiento]
@@ -63,7 +63,7 @@ paths:
               schema: { $ref: '#/components/schemas/PerfilRiesgo' }
         '400': { $ref: '#/components/responses/SolicitudInvalida' }
 
-  /perfiles/{clienteId}:
+  /v1/perfiles/{clienteId}:
     get:
       operationId: obtenerPerfil
       tags: [Perfilamiento]

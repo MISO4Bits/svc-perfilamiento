@@ -51,7 +51,8 @@ def calcular_perfil_riesgo(
 
     Heurística de primer corte (no es un modelo actuarial real — caso
     académico): cada señal negativa suma al factor, cada señal positiva
-    resta. Con degradación parcial (BITS-106 AC-2): si una fuente no
+    resta, y cada ajuste deja su factor (descripción + efecto) para explicar el precio
+    (BITS-106 AC-4). Con degradación parcial (BITS-106 AC-2): si una fuente no
     respondió, simplemente no aporta factores — nunca bloquea el cálculo.
     """
     factor = _FACTOR_BASE
@@ -76,6 +77,9 @@ def calcular_perfil_riesgo(
             )
         elif open_finance.historial_pagos == "EXCELENTE":
             factor -= Decimal("0.05")
+            factores.append(
+                FactorRiesgo("Historial de pagos excelente", EfectoFactor.POSITIVO, Decimal("0.1"))
+            )
 
     if open_data is not None:
         if open_data.categoria_salud_actuarial == "ELEVADA":
@@ -87,6 +91,11 @@ def calcular_perfil_riesgo(
             )
         elif open_data.categoria_salud_actuarial == "BAJA":
             factor -= Decimal("0.05")
+            factores.append(
+                FactorRiesgo(
+                    "Categoría de salud actuarial baja", EfectoFactor.POSITIVO, Decimal("0.1")
+                )
+            )
 
     factor = min(max(factor, _FACTOR_MIN), _FACTOR_MAX)
     if factor < Decimal("0.95"):
@@ -181,7 +190,7 @@ class PerfilamientoService:
         await self._recalcular(cliente_id)
 
     async def calcular_perfil(self, cliente_id: str, numero_documento: str) -> PerfilRiesgo:
-        """Consulta ambas fuentes y calcula el perfil (``POST /perfiles``)."""
+        """Consulta ambas fuentes y calcula el perfil (``POST /v1/perfiles``)."""
         perfil = await self._otorgar(
             cliente_id, numero_documento, [Fuente.OPEN_FINANCE, Fuente.OPEN_DATA]
         )

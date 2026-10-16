@@ -30,7 +30,7 @@ def _validar(spec: dict, ref: str, instancia) -> None:
 
 def test_spec_tiene_estructura_openapi(openapi_spec):
     assert openapi_spec["openapi"].startswith("3.")
-    assert "post" in openapi_spec["paths"]["/perfiles"]
+    assert "post" in openapi_spec["paths"]["/v1/perfiles"]
 
 
 def test_referencias_de_schema_existen(openapi_spec):
@@ -48,20 +48,20 @@ def test_contrato_y_codigo_exponen_las_mismas_operaciones(app, openapi_spec):
 
 
 async def test_respuesta_de_calcular_perfil_cumple_el_contrato(client, openapi_spec):
-    resp = await client.post("/perfiles", json=SOLICITUD_VALIDA)
+    resp = await client.post("/v1/perfiles", json=SOLICITUD_VALIDA)
     assert resp.status_code == 201
     _validar(openapi_spec, "PerfilRiesgo", resp.json())
 
 
 async def test_respuesta_de_obtener_perfil_cumple_el_contrato(client, openapi_spec):
-    await client.post("/perfiles", json=SOLICITUD_VALIDA)
-    resp = await client.get("/perfiles/cli-1")
+    await client.post("/v1/perfiles", json=SOLICITUD_VALIDA)
+    resp = await client.get("/v1/perfiles/cli-1")
     assert resp.status_code == 200
     _validar(openapi_spec, "PerfilRiesgo", resp.json())
 
 
 async def test_error_cumple_problem_details(client, openapi_spec):
-    resp = await client.get("/perfiles/no-existe")
+    resp = await client.get("/v1/perfiles/no-existe")
     assert resp.status_code == 404
     assert resp.headers["content-type"].startswith("application/problem+json")
     _validar(openapi_spec, "Problema", resp.json())
@@ -78,7 +78,7 @@ async def test_respuesta_de_creditos_hipotecarios_cumple_el_contrato(client, ope
     assert sin_consentimiento.status_code == 200
     _validar(openapi_spec, "CreditosHipotecarios", sin_consentimiento.json())
 
-    await client.post("/perfiles", json=SOLICITUD_VALIDA)
+    await client.post("/v1/perfiles", json=SOLICITUD_VALIDA)
     disponible = await client.get("/clientes/cli-1/creditos-hipotecarios")
     assert disponible.status_code == 200
     _validar(openapi_spec, "CreditosHipotecarios", disponible.json())

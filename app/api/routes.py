@@ -1,6 +1,6 @@
 """Rutas HTTP del servicio de Perfilamiento.
 
-``POST /perfiles`` representa, vía HTTP, lo que en el diseño objetivo
+``POST /v1/perfiles`` representa, vía HTTP, lo que en el diseño objetivo
 disparan los eventos de CoreTransaccional (``ClienteRegistrado`` y
 ``ConsentimientoOtorgado``, ver la página de componente "Perfilamiento",
 Sección 8). ``GET``/``DELETE`` son el contrato final: lectura barata del perfil
@@ -31,28 +31,28 @@ ServiceDep = Annotated[PerfilamientoService, Depends(get_service)]
 
 
 @router.post(
-    "/perfiles",
+    "/v1/perfiles",
     response_model=PerfilRiesgoOut,
     status_code=status.HTTP_201_CREATED,
 )
 async def calcular_perfil(payload: SolicitudPerfilIn, service: ServiceDep) -> PerfilRiesgoOut:
     logger.info(
-        "POST /perfiles: solicitud recibida cliente_id=%s", sanear_para_log(payload.cliente_id)
+        "POST /v1/perfiles: solicitud recibida cliente_id=%s", sanear_para_log(payload.cliente_id)
     )
     perfil = await service.calcular_perfil(payload.cliente_id, payload.numero_documento)
     return PerfilRiesgoOut.model_validate(perfil)
 
 
-@router.get("/perfiles/{cliente_id}", response_model=PerfilRiesgoOut)
+@router.get("/v1/perfiles/{cliente_id}", response_model=PerfilRiesgoOut)
 async def obtener_perfil(cliente_id: str, service: ServiceDep) -> PerfilRiesgoOut:
-    logger.info("GET /perfiles/%s: solicitud recibida", sanear_para_log(cliente_id))
+    logger.info("GET /v1/perfiles/%s: solicitud recibida", sanear_para_log(cliente_id))
     perfil = await service.obtener_perfil(cliente_id)
     return PerfilRiesgoOut.model_validate(perfil)
 
 
-@router.delete("/perfiles/{cliente_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/v1/perfiles/{cliente_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def invalidar_perfil(cliente_id: str, service: ServiceDep) -> Response:
-    logger.info("DELETE /perfiles/%s: solicitud recibida", sanear_para_log(cliente_id))
+    logger.info("DELETE /v1/perfiles/%s: solicitud recibida", sanear_para_log(cliente_id))
     await service.invalidar_perfil(cliente_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
