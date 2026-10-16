@@ -7,6 +7,7 @@ import pytest
 from app.adapters.fakes import FakePerfilRepository, FakeSenalesRepository, LoggingEventos
 from app.domain import (
     DependenciaNoDisponible,
+    EfectoFactor,
     NivelRiesgo,
     RecursoNoEncontrado,
     SenalOpenData,
@@ -88,6 +89,72 @@ def test_calcular_perfil_riesgo_combinacion_segura_da_nivel_bajo():
 def test_calcular_perfil_riesgo_conserva_fuentes_no_disponibles():
     perfil = calcular_perfil_riesgo("cli-1", None, SENAL_OD_SEGURA, ("open-finance",))
     assert perfil.fuentes_no_disponibles == ("open-finance",)
+
+
+def _of(endeudamiento: str, historial: str) -> SenalOpenFinance:
+    return SenalOpenFinance(
+        score_crediticio=600,
+        nivel_endeudamiento=endeudamiento,
+        historial_pagos=historial,
+        productos_activos=2,
+    )
+
+
+def _od(salud: str) -> SenalOpenData:
+    return SenalOpenData(
+        estrato=3, departamento="Cundinamarca", ciudad="Bogotá", categoria_salud_actuarial=salud
+    )
+
+
+# Tabla "Ejemplos" de BITS-106: (endeudamiento, historial, salud o None si Open Data no responde).
+@pytest.mark.parametrize(
+    ("endeudamiento", "historial", "salud", "factor", "nivel"),
+    [
+        ("BAJO", "EXCELENTE", "ESTANDAR", "0.85", NivelRiesgo.BAJO),
+        ("MEDIO", "BUENO", "ESTANDAR", "1.00", NivelRiesgo.MEDIO),
+        ("MEDIO", "IRREGULAR", "ESTANDAR", "1.15", NivelRiesgo.MEDIO),
+        ("ALTO", "BUENO", None, "1.30", NivelRiesgo.ALTO),
+        ("ALTO", "IRREGULAR", "ELEVADA", "1.65", NivelRiesgo.ALTO),
+    ],
+)
+def test_calcular_perfil_riesgo_ejemplos_de_la_historia(
+    endeudamiento, historial, salud, factor, nivel
+):
+    perfil = calcular_perfil_riesgo(
+        "cli-1",
+        _of(endeudamiento, historial),
+        _od(salud) if salud else None,
+        () if salud else ("open-data",),
+    )
+    assert perfil.factor_ajuste == Decimal(factor)
+    assert perfil.nivel_riesgo == nivel
+
+
+@pytest.mark.parametrize(
+    ("endeudamiento", "historial", "salud"),
+    [
+        (e, h, s)
+        for e in ("ALTO", "MEDIO", "BAJO")
+        for h in ("IRREGULAR", "BUENO", "EXCELENTE")
+        for s in ("ELEVADA", "ESTANDAR", "BAJA")
+    ],
+)
+def test_calcular_perfil_riesgo_cada_ajuste_deja_su_factor(endeudamiento, historial, salud):
+    """AC-4: los factores explican todo el precio. Sin límites de por medio, el factor de
+    ajuste es 1,00 más los ajustes de los factores guardados (positivo suma, negativo resta)."""
+    perfil = calcular_perfil_riesgo("cli-1", _of(endeudamiento, historial), _od(salud), ())
+    ajustes = {
+        "Endeudamiento alto": Decimal("0.30"),
+        "Endeudamiento bajo": Decimal("0.10"),
+        "Historial de pagos irregular": Decimal("0.15"),
+        "Historial de pagos excelente": Decimal("0.05"),
+        "Categoría de salud actuarial elevada": Decimal("0.20"),
+        "Categoría de salud actuarial baja": Decimal("0.05"),
+    }
+    explicado = Decimal("1.00")
+    for f in perfil.factores:
+        explicado += ajustes[f.descripcion] * (1 if f.efecto is EfectoFactor.NEGATIVO else -1)
+    assert explicado == perfil.factor_ajuste
 
 
 # --- PerfilamientoService (orquestación + degradación parcial) ---

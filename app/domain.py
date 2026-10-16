@@ -7,8 +7,8 @@ van los tipos del dominio y sus invariantes de consistencia.
 Diseño de referencia: página "Perfilamiento" de David (Confluence, 4BITS).
 El perfil se calcula de forma asíncrona (disparado, en el diseño objetivo, por
 el evento ``ConsentimientoOtorgado`` de CoreTransaccional — hoy expuesto vía
-``POST /perfiles`` hasta que exista el consumidor real de Pub/Sub) y luego se
-consulta de forma síncrona y barata (``GET /perfiles/{cliente_id}``).
+``POST /v1/perfiles`` hasta que exista el consumidor real de Pub/Sub) y luego se
+consulta de forma síncrona y barata (``GET /v1/perfiles/{cliente_id}``).
 """
 
 from __future__ import annotations
