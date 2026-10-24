@@ -46,6 +46,7 @@ def calcular_perfil_riesgo(
     open_finance: SenalOpenFinance | None,
     open_data: SenalOpenData | None,
     fuentes_no_disponibles: tuple[str, ...],
+    hipotecas_consultadas_en: datetime | None = None,
 ) -> PerfilRiesgo:
     """Combina las señales disponibles en nivel de riesgo + factor de ajuste.
 
@@ -111,6 +112,8 @@ def calcular_perfil_riesgo(
         factores=tuple(factores),
         factor_ajuste=factor,
         fuentes_no_disponibles=fuentes_no_disponibles,
+        hipotecas=open_finance.hipotecas if open_finance is not None else (),
+        hipotecas_consultadas_en=hipotecas_consultadas_en if open_finance is not None else None,
     )
 
 
@@ -286,6 +289,7 @@ class PerfilamientoService:
         Sin ninguna fuente consentida no hay perfil: se borra y se avisa."""
         activas: list[Fuente] = []
         senales: dict[Fuente, SenalOpenFinance | SenalOpenData] = {}
+        consultado_en_of: datetime | None = None
         for fuente in Fuente:
             if await self._senales.obtener_consentimiento(cliente_id, fuente) is None:
                 continue
@@ -293,6 +297,8 @@ class PerfilamientoService:
             consulta = await self._senales.obtener_senal(cliente_id, fuente)
             if consulta is not None:
                 senales[fuente] = consulta.senal
+                if fuente is Fuente.OPEN_FINANCE:
+                    consultado_en_of = consulta.consultado_en
 
         if not activas:
             await self._repositorio.eliminar(cliente_id)
@@ -308,6 +314,7 @@ class PerfilamientoService:
             open_finance,
             open_data,
             tuple(f.nombre for f in activas if f not in senales),
+            consultado_en_of,
         )
         await self._repositorio.guardar(perfil)
         await self._eventos.publicar(

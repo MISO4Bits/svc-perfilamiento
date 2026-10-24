@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -8,6 +9,7 @@ from app.adapters.fakes import FakePerfilRepository, FakeSenalesRepository, Logg
 from app.domain import (
     DependenciaNoDisponible,
     EfectoFactor,
+    Hipoteca,
     NivelRiesgo,
     RecursoNoEncontrado,
     SenalOpenData,
@@ -217,3 +219,25 @@ async def test_invalidar_perfil_lo_borra_del_repositorio():
     await servicio.invalidar_perfil("cli-1")
     with pytest.raises(RecursoNoEncontrado):
         await servicio.obtener_perfil("cli-1")
+
+
+def test_el_perfil_lleva_las_hipotecas_de_open_finance():
+    consultado = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
+    hipoteca = Hipoteca(
+        "BBVA COLOMBIA S.A.", Decimal("200000000"), Decimal("160000000"), 180, Decimal("2100000")
+    )
+    senal = SenalOpenFinance(700, "MEDIO", "BUENO", 2, hipotecas=(hipoteca,))
+
+    perfil = calcular_perfil_riesgo("cli-1", senal, None, (), consultado)
+
+    assert perfil.hipotecas == (hipoteca,)
+    assert perfil.hipotecas_consultadas_en == consultado
+
+
+def test_sin_open_finance_el_perfil_no_lleva_hipotecas():
+    consultado = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
+
+    perfil = calcular_perfil_riesgo("cli-1", None, SENAL_OD_SEGURA, (), consultado)
+
+    assert perfil.hipotecas == ()
+    assert perfil.hipotecas_consultadas_en is None
