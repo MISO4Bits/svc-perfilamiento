@@ -183,3 +183,48 @@ async def test_dependencias_inicializan_el_esquema_solo_con_sqlite(tmp_path):
     await deps.init()
     await deps.senales.guardar_consentimiento(ConsentimientoFuente("c", Fuente.OPEN_DATA, "1234"))
     assert await deps.senales.obtener_consentimiento("c", Fuente.OPEN_DATA) is not None
+
+
+async def test_perfil_conserva_las_hipotecas_de_open_finance(repos):
+    perfiles, _ = repos
+    con_hipotecas = PerfilRiesgo(
+        "cli-1",
+        NivelRiesgo.MEDIO,
+        (),
+        Decimal("1.0"),
+        (),
+        AHORA,
+        hipotecas=SENAL_OF.hipotecas,
+        hipotecas_consultadas_en=AHORA,
+    )
+    await perfiles.guardar(con_hipotecas)
+
+    guardado = await perfiles.obtener("cli-1")
+
+    assert guardado == con_hipotecas
+    assert guardado.hipotecas == SENAL_OF.hipotecas
+    assert guardado.hipotecas_consultadas_en == AHORA
+
+
+async def test_una_base_anterior_sin_columnas_de_hipotecas_se_migra(tmp_path):
+    import aiosqlite
+
+    ruta = str(tmp_path / "vieja.db")
+    async with aiosqlite.connect(ruta) as conn:
+        await conn.execute(
+            "CREATE TABLE perfil_riesgo (cliente_id TEXT PRIMARY KEY, nivel_riesgo TEXT NOT NULL, "
+            "factor_ajuste TEXT NOT NULL, factores TEXT NOT NULL, "
+            "fuentes_no_disponibles TEXT NOT NULL, calculado_en TEXT NOT NULL)"
+        )
+        await conn.execute(
+            "INSERT INTO perfil_riesgo VALUES ('cli-1', 'BAJO', '0.85', '[]', '[]', ?)",
+            (AHORA.isoformat(),),
+        )
+        await conn.commit()
+
+    db = SqliteDatabase(ruta)
+    await db.init()
+    viejo = await SqlitePerfilRepository(db).obtener("cli-1")
+
+    assert viejo.hipotecas == ()
+    assert viejo.hipotecas_consultadas_en is None

@@ -52,9 +52,18 @@ CREATE TABLE IF NOT EXISTS perfil_riesgo (
     factor_ajuste TEXT NOT NULL,
     factores TEXT NOT NULL,
     fuentes_no_disponibles TEXT NOT NULL,
-    calculado_en TEXT NOT NULL
+    calculado_en TEXT NOT NULL,
+    hipotecas TEXT NOT NULL DEFAULT '[]',
+    hipotecas_consultadas_en TEXT
 );
 """
+
+# Columnas agregadas después de la primera versión de la tabla: ``CREATE TABLE IF NOT EXISTS``
+# no las crea en una base que ya existe.
+_COLUMNAS_NUEVAS_PERFIL = {
+    "hipotecas": "TEXT NOT NULL DEFAULT '[]'",
+    "hipotecas_consultadas_en": "TEXT",
+}
 
 
 class SqliteDatabase:
@@ -64,6 +73,13 @@ class SqliteDatabase:
     async def init(self) -> None:
         async with self.connect() as conn:
             await conn.executescript(_SCHEMA)
+            cursor = await conn.execute("PRAGMA table_info(perfil_riesgo)")
+            existentes = {row["name"] for row in await cursor.fetchall()}
+            for columna, definicion in _COLUMNAS_NUEVAS_PERFIL.items():
+                if columna not in existentes:
+                    await conn.execute(
+                        f"ALTER TABLE perfil_riesgo ADD COLUMN {columna} {definicion}"
+                    )
             await conn.commit()
 
     @asynccontextmanager
@@ -79,6 +95,26 @@ class SqliteDatabase:
 # --- (de)serialización de señales ---
 
 
+def _hipoteca_a_dict(h: Hipoteca) -> dict:
+    return {
+        "entidadAcreedora": h.entidad_acreedora,
+        "valorCredito": str(h.valor_credito),
+        "saldoInsoluto": str(h.saldo_insoluto),
+        "plazoRestanteMeses": h.plazo_restante_meses,
+        "cuotaMensual": str(h.cuota_mensual),
+    }
+
+
+def _hipoteca_de_dict(h: dict) -> Hipoteca:
+    return Hipoteca(
+        entidad_acreedora=h["entidadAcreedora"],
+        valor_credito=Decimal(h["valorCredito"]),
+        saldo_insoluto=Decimal(h["saldoInsoluto"]),
+        plazo_restante_meses=h["plazoRestanteMeses"],
+        cuota_mensual=Decimal(h["cuotaMensual"]),
+    )
+
+
 def _senal_a_json(senal: SenalOpenFinance | SenalOpenData) -> str:
     if isinstance(senal, SenalOpenFinance):
         return json.dumps(
@@ -87,16 +123,7 @@ def _senal_a_json(senal: SenalOpenFinance | SenalOpenData) -> str:
                 "nivelEndeudamiento": senal.nivel_endeudamiento,
                 "historialPagos": senal.historial_pagos,
                 "productosActivos": senal.productos_activos,
-                "hipotecas": [
-                    {
-                        "entidadAcreedora": h.entidad_acreedora,
-                        "valorCredito": str(h.valor_credito),
-                        "saldoInsoluto": str(h.saldo_insoluto),
-                        "plazoRestanteMeses": h.plazo_restante_meses,
-                        "cuotaMensual": str(h.cuota_mensual),
-                    }
-                    for h in senal.hipotecas
-                ],
+                "hipotecas": [_hipoteca_a_dict(h) for h in senal.hipotecas],
             }
         )
     return json.dumps(
@@ -117,16 +144,7 @@ def _senal_de_json(fuente: Fuente, contenido: str) -> SenalOpenFinance | SenalOp
             nivel_endeudamiento=d["nivelEndeudamiento"],
             historial_pagos=d["historialPagos"],
             productos_activos=d["productosActivos"],
-            hipotecas=tuple(
-                Hipoteca(
-                    entidad_acreedora=h["entidadAcreedora"],
-                    valor_credito=Decimal(h["valorCredito"]),
-                    saldo_insoluto=Decimal(h["saldoInsoluto"]),
-                    plazo_restante_meses=h["plazoRestanteMeses"],
-                    cuota_mensual=Decimal(h["cuotaMensual"]),
-                )
-                for h in d["hipotecas"]
-            ),
+            hipotecas=tuple(_hipoteca_de_dict(h) for h in d["hipotecas"]),
         )
     return SenalOpenData(
         estrato=d["estrato"],
@@ -234,11 +252,13 @@ class SqlitePerfilRepository:
         async with self._db.connect() as conn:
             await conn.execute(
                 "INSERT INTO perfil_riesgo (cliente_id, nivel_riesgo, factor_ajuste, factores, "
-                "fuentes_no_disponibles, calculado_en) VALUES (?, ?, ?, ?, ?, ?) "
+                "fuentes_no_disponibles, calculado_en, hipotecas, hipotecas_consultadas_en) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT (cliente_id) DO UPDATE SET nivel_riesgo = excluded.nivel_riesgo, "
                 "factor_ajuste = excluded.factor_ajuste, factores = excluded.factores, "
                 "fuentes_no_disponibles = excluded.fuentes_no_disponibles, "
-                "calculado_en = excluded.calculado_en",
+                "calculado_en = excluded.calculado_en, hipotecas = excluded.hipotecas, "
+                "hipotecas_consultadas_en = excluded.hipotecas_consultadas_en",
                 (
                     perfil.cliente_id,
                     str(perfil.nivel_riesgo),
@@ -246,6 +266,10 @@ class SqlitePerfilRepository:
                     json.dumps(factores),
                     json.dumps(list(perfil.fuentes_no_disponibles)),
                     perfil.calculado_en.isoformat(),
+                    json.dumps([_hipoteca_a_dict(h) for h in perfil.hipotecas]),
+                    None
+                    if perfil.hipotecas_consultadas_en is None
+                    else perfil.hipotecas_consultadas_en.isoformat(),
                 ),
             )
             await conn.commit()
@@ -272,6 +296,12 @@ class SqlitePerfilRepository:
             factor_ajuste=Decimal(row["factor_ajuste"]),
             fuentes_no_disponibles=tuple(json.loads(row["fuentes_no_disponibles"])),
             calculado_en=datetime.fromisoformat(row["calculado_en"]),
+            hipotecas=tuple(_hipoteca_de_dict(h) for h in json.loads(row["hipotecas"])),
+            hipotecas_consultadas_en=(
+                None
+                if row["hipotecas_consultadas_en"] is None
+                else datetime.fromisoformat(row["hipotecas_consultadas_en"])
+            ),
         )
 
     async def eliminar(self, cliente_id: str) -> None:

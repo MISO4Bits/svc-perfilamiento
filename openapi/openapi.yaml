@@ -191,6 +191,17 @@ components:
           items: { type: string }
           description: Fuentes que no respondieron a tiempo (degradación parcial).
         calculadoEn: { type: string, format: date-time }
+        hipotecas:
+          type: array
+          items: { $ref: '#/components/schemas/Hipoteca' }
+          description: |
+            Hipotecas que Open Finance reportó con el último cálculo del perfil. Vacía sin
+            consentimiento de Open Finance o si la fuente no respondió. Cotización las compara con
+            los datos del crédito para marcarlos `CONFIRMADO`.
+        hipotecasConsultadasEn:
+          type: [string, 'null']
+          format: date-time
+          description: Cuándo se consultó Open Finance. `null` si no hay hipotecas de esa fuente.
 
     Hipoteca:
       type: object

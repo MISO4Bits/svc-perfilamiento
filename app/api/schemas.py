@@ -43,6 +43,14 @@ class FactorRiesgoOut(_Model):
     peso_relativo: float | None = None
 
 
+class HipotecaOut(_Model):
+    entidad_acreedora: str
+    valor_credito: float
+    saldo_insoluto: float
+    plazo_restante_meses: int
+    cuota_mensual: float
+
+
 class PerfilRiesgoOut(_Model):
     cliente_id: str
     nivel_riesgo: Literal["BAJO", "MEDIO", "ALTO"]
@@ -50,14 +58,8 @@ class PerfilRiesgoOut(_Model):
     factores: list[FactorRiesgoOut]
     fuentes_no_disponibles: list[str] = Field(default_factory=list)
     calculado_en: datetime
-
-
-class HipotecaOut(_Model):
-    entidad_acreedora: str
-    valor_credito: float
-    saldo_insoluto: float
-    plazo_restante_meses: int
-    cuota_mensual: float
+    hipotecas: list[HipotecaOut] = Field(default_factory=list)
+    hipotecas_consultadas_en: datetime | None = None
 
 
 class CreditosHipotecariosOut(_Model):

@@ -63,3 +63,20 @@ async def test_lo_guardado_responde_desde_un_pod_reiniciado(tmp_path, backend):
         creditos = await reiniciado.state.service.obtener_creditos_hipotecarios("cli-1")
         perfil_guardado = backend == "sqlite"
         assert (creditos.estado.value == "DISPONIBLE") is perfil_guardado
+
+
+async def test_el_perfil_incluye_las_hipotecas_de_open_finance(client):
+    await client.post("/v1/perfiles", json=SOLICITUD)
+
+    perfil = (await client.get("/v1/perfiles/cli-1")).json()
+
+    assert perfil["hipotecas"] == [
+        {
+            "entidadAcreedora": "BBVA COLOMBIA S.A.",
+            "valorCredito": 200000000,
+            "saldoInsoluto": 160000000,
+            "plazoRestanteMeses": 180,
+            "cuotaMensual": 2100000,
+        }
+    ]
+    assert perfil["hipotecasConsultadasEn"]

@@ -170,6 +170,10 @@ class PerfilRiesgo:
     factor_ajuste: Decimal  # multiplicador que Cotización aplica a la prima base
     fuentes_no_disponibles: tuple[str, ...] = ()
     calculado_en: datetime = field(default_factory=now_utc)
+    # Las hipotecas que reportó Open Finance al calcular el perfil. Cotización las compara con
+    # los datos del crédito para marcarlos CONFIRMADO (BITS-101).
+    hipotecas: tuple[Hipoteca, ...] = ()
+    hipotecas_consultadas_en: datetime | None = None
 
 
 # --- eventos de dominio ---
