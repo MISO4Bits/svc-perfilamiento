@@ -47,3 +47,18 @@ async def test_invalidar_perfil_inexistente_tambien_devuelve_204(client):
 async def test_trae_x_trace_id_deshabilitado_sin_otel(client):
     resp = await client.get("/health")
     assert "X-Trace-Id" not in resp.headers
+
+
+async def test_el_perfil_trae_la_ciudad_de_open_data(client, openapi_spec):
+    await client.post("/v1/perfiles", json=SOLICITUD)
+
+    perfil = (await client.get("/v1/perfiles/cli-1")).json()
+
+    assert perfil["ciudad"] == "Bogotá"
+    esquema = {
+        "$ref": "#/components/schemas/PerfilRiesgo",
+        "components": openapi_spec["components"],
+    }
+    from jsonschema import Draft202012Validator
+
+    assert not list(Draft202012Validator(esquema).iter_errors(perfil))

@@ -174,6 +174,9 @@ class PerfilRiesgo:
     # los datos del crédito para marcarlos CONFIRMADO (BITS-101).
     hipotecas: tuple[Hipoteca, ...] = ()
     hipotecas_consultadas_en: datetime | None = None
+    # La ciudad que reportó Open Data (BITS-386): Core la usa para saber si un sismo afectó al
+    # cliente. ``None`` sin consentimiento de Open Data o si la fuente no respondió.
+    ciudad: str | None = None
 
 
 # --- eventos de dominio ---
