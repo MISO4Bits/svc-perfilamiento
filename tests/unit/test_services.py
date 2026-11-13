@@ -241,3 +241,14 @@ def test_sin_open_finance_el_perfil_no_lleva_hipotecas():
 
     assert perfil.hipotecas == ()
     assert perfil.hipotecas_consultadas_en is None
+
+
+def test_el_perfil_trae_la_ciudad_que_reporto_open_data():
+    perfil = calcular_perfil_riesgo("cli-1", None, SENAL_OD_SEGURA, ())
+
+    assert perfil.ciudad == "Bogotá"
+
+
+def test_el_perfil_sin_open_data_no_trae_ciudad():
+    assert calcular_perfil_riesgo("cli-1", SENAL_OF_SEGURA, None, ()).ciudad is None
+    assert calcular_perfil_riesgo("cli-1", None, None, ("OPEN_DATA",)).ciudad is None

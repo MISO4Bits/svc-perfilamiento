@@ -202,6 +202,11 @@ components:
           type: [string, 'null']
           format: date-time
           description: Cuándo se consultó Open Finance. `null` si no hay hipotecas de esa fuente.
+        ciudad:
+          type: [string, 'null']
+          description: |
+            La ciudad que reportó Open Data (BITS-386). Core la usa para saber si un sismo afectó
+            al cliente. `null` sin consentimiento de Open Data o si la fuente no respondió.
 
     Hipoteca:
       type: object

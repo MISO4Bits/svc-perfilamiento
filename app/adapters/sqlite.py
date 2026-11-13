@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS perfil_riesgo (
     fuentes_no_disponibles TEXT NOT NULL,
     calculado_en TEXT NOT NULL,
     hipotecas TEXT NOT NULL DEFAULT '[]',
-    hipotecas_consultadas_en TEXT
+    hipotecas_consultadas_en TEXT,
+    ciudad TEXT
 );
 """
 
@@ -63,6 +64,7 @@ CREATE TABLE IF NOT EXISTS perfil_riesgo (
 _COLUMNAS_NUEVAS_PERFIL = {
     "hipotecas": "TEXT NOT NULL DEFAULT '[]'",
     "hipotecas_consultadas_en": "TEXT",
+    "ciudad": "TEXT",
 }
 
 
@@ -252,13 +254,14 @@ class SqlitePerfilRepository:
         async with self._db.connect() as conn:
             await conn.execute(
                 "INSERT INTO perfil_riesgo (cliente_id, nivel_riesgo, factor_ajuste, factores, "
-                "fuentes_no_disponibles, calculado_en, hipotecas, hipotecas_consultadas_en) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "fuentes_no_disponibles, calculado_en, hipotecas, hipotecas_consultadas_en, "
+                "ciudad) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT (cliente_id) DO UPDATE SET nivel_riesgo = excluded.nivel_riesgo, "
                 "factor_ajuste = excluded.factor_ajuste, factores = excluded.factores, "
                 "fuentes_no_disponibles = excluded.fuentes_no_disponibles, "
                 "calculado_en = excluded.calculado_en, hipotecas = excluded.hipotecas, "
-                "hipotecas_consultadas_en = excluded.hipotecas_consultadas_en",
+                "hipotecas_consultadas_en = excluded.hipotecas_consultadas_en, "
+                "ciudad = excluded.ciudad",
                 (
                     perfil.cliente_id,
                     str(perfil.nivel_riesgo),
@@ -270,6 +273,7 @@ class SqlitePerfilRepository:
                     None
                     if perfil.hipotecas_consultadas_en is None
                     else perfil.hipotecas_consultadas_en.isoformat(),
+                    perfil.ciudad,
                 ),
             )
             await conn.commit()
@@ -302,6 +306,7 @@ class SqlitePerfilRepository:
                 if row["hipotecas_consultadas_en"] is None
                 else datetime.fromisoformat(row["hipotecas_consultadas_en"])
             ),
+            ciudad=row["ciudad"],
         )
 
     async def eliminar(self, cliente_id: str) -> None:

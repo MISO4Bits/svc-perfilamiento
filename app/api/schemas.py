@@ -60,6 +60,7 @@ class PerfilRiesgoOut(_Model):
     calculado_en: datetime
     hipotecas: list[HipotecaOut] = Field(default_factory=list)
     hipotecas_consultadas_en: datetime | None = None
+    ciudad: str | None = None
 
 
 class CreditosHipotecariosOut(_Model):

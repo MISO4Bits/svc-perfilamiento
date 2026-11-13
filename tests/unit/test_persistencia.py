@@ -228,3 +228,41 @@ async def test_una_base_anterior_sin_columnas_de_hipotecas_se_migra(tmp_path):
 
     assert viejo.hipotecas == ()
     assert viejo.hipotecas_consultadas_en is None
+
+
+async def test_perfil_conserva_la_ciudad(repos):
+    perfiles, _ = repos
+    perfil = PerfilRiesgo(
+        "cli-1", NivelRiesgo.MEDIO, (), Decimal("1.0"), (), AHORA, ciudad="Soacha"
+    )
+    await perfiles.guardar(perfil)
+
+    assert (await perfiles.obtener("cli-1")).ciudad == "Soacha"
+
+    # Un recálculo sin Open Data deja la ciudad en blanco: no arrastra la anterior.
+    await perfiles.guardar(PerfilRiesgo("cli-1", NivelRiesgo.MEDIO, (), Decimal("1.0"), (), AHORA))
+    assert (await perfiles.obtener("cli-1")).ciudad is None
+
+
+async def test_una_base_anterior_sin_la_columna_ciudad_se_migra(tmp_path):
+    import aiosqlite
+
+    ruta = str(tmp_path / "anterior.db")
+    async with aiosqlite.connect(ruta) as conn:
+        await conn.execute(
+            "CREATE TABLE perfil_riesgo (cliente_id TEXT PRIMARY KEY, nivel_riesgo TEXT NOT NULL, "
+            "factor_ajuste TEXT NOT NULL, factores TEXT NOT NULL, "
+            "fuentes_no_disponibles TEXT NOT NULL, calculado_en TEXT NOT NULL, "
+            "hipotecas TEXT NOT NULL DEFAULT '[]', hipotecas_consultadas_en TEXT)"
+        )
+        await conn.execute(
+            "INSERT INTO perfil_riesgo (cliente_id, nivel_riesgo, factor_ajuste, factores, "
+            "fuentes_no_disponibles, calculado_en) VALUES ('cli-1', 'BAJO', '0.85', '[]', '[]', ?)",
+            (AHORA.isoformat(),),
+        )
+        await conn.commit()
+
+    db = SqliteDatabase(ruta)
+    await db.init()
+
+    assert (await SqlitePerfilRepository(db).obtener("cli-1")).ciudad is None

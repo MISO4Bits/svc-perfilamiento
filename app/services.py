@@ -114,6 +114,7 @@ def calcular_perfil_riesgo(
         fuentes_no_disponibles=fuentes_no_disponibles,
         hipotecas=open_finance.hipotecas if open_finance is not None else (),
         hipotecas_consultadas_en=hipotecas_consultadas_en if open_finance is not None else None,
+        ciudad=open_data.ciudad if open_data is not None else None,
     )
 
 
